@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>方向 B · 明亮编辑风</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    display: grid; place-items: center; padding: 34px 30px;
+    background: #fbfaf7;
+    color: #1b2028;
+    font: 400 14px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .page { width: min(100%, 620px); }
+  .masthead { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid #1b2028; padding-bottom: 8px; }
+  .masthead span { font-size: 10px; letter-spacing: .3em; text-transform: uppercase; }
+  .masthead span:last-child { color: #8d8577; letter-spacing: .12em; }
+  h1 { margin-top: 20px; font-family: Georgia, "Songti SC", "SimSun", serif; font-size: clamp(28px, 6.2vw, 44px); font-weight: 500; line-height: 1.18; letter-spacing: .01em; }
+  h1 em { font-style: italic; color: #a3713a; }
+  .lede { margin-top: 14px; max-width: 34em; color: #55504a; font-size: 13px; }
+  .grid { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #ddd6c8; border: 1px solid #ddd6c8; }
+  .cell { background: #fbfaf7; padding: 12px 13px; }
+  .cell b { display: block; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #8d8577; font-weight: 500; }
+  .cell span { display: block; margin-top: 6px; font-size: 12px; color: #2a2f38; }
+  .swatches { margin-top: 18px; display: flex; gap: 6px; }
+  .swatches i { width: 34px; height: 12px; border-radius: 2px; display: block; }
+  .foot { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e6e0d3; color: #8d8577; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead"><span>Direction B</span><span>日间 · 编辑风</span></header>
+    <h1>纸白的底，<em>衬线</em>的骨，<br />信息排成网格。</h1>
+    <p class="lede">暖白纸面、衬线标题、1px 网格和编号。适合讲解、报告与需要"读得下去"的内容：先把信息排稳，再谈情绪。</p>
+    <section class="grid">
+      <div class="cell"><b>Palette</b><span>#FBFAF7 / #A3713A</span></div>
+      <div class="cell"><b>Type</b><span>Georgia 衬线 + 无衬线正文</span></div>
+      <div class="cell"><b>Grid</b><span>3 栏 · 1px 描边</span></div>
+    </section>
+    <div class="swatches">
+      <i style="background:#fbfaf7;border:1px solid #ddd6c8"></i>
+      <i style="background:#e6e0d3"></i>
+      <i style="background:#a3713a"></i>
+      <i style="background:#55504a"></i>
+      <i style="background:#1b2028"></i>
+    </div>
+    <p class="foot">这是选项 B 的结果长什么样 · sample-b-light</p>
+  </main>
+</body>
+</html>

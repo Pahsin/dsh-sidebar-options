@@ -1,0 +1,47 @@
+{
+  "name": "dsh-sidebar-options",
+  "version": "0.2.0",
+  "description": "Right-sidebar option brief for DeepSeek Harness: when the agent asks with options, the panel shows each option's description and sample files.",
+  "license": "MIT",
+  "author": "Pashin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pahsin/dsh-sidebar-options.git"
+  },
+  "homepage": "https://github.com/Pahsin/dsh-sidebar-options#readme",
+  "bugs": {
+    "url": "https://github.com/Pahsin/dsh-sidebar-options/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "sidebar",
+    "ask-user-question"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right"]
+    }
+  }
+}

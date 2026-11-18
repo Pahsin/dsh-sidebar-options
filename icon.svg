@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Option brief">
+  <rect x="3" y="6" width="58" height="52" rx="10" fill="#eef4ff"/>
+  <rect x="3" y="6" width="58" height="52" rx="10" fill="none" stroke="#7aa7ff" stroke-width="2.5"/>
+  <path d="M38 6h13a10 10 0 0 1 10 10v32a10 10 0 0 1-10 10H38z" fill="#d7e5ff"/>
+  <g fill="#3b6fd4">
+    <circle cx="16" cy="21" r="4"/>
+    <circle cx="16" cy="32" r="4" fill="none" stroke="#3b6fd4" stroke-width="2.5"/>
+    <circle cx="16" cy="43" r="4" fill="none" stroke="#3b6fd4" stroke-width="2.5"/>
+  </g>
+  <g stroke="#3b6fd4" stroke-width="3" stroke-linecap="round">
+    <path d="M25 21h9"/>
+    <path d="M25 32h9"/>
+    <path d="M25 43h9"/>
+  </g>
+  <g fill="#2b5fc0">
+    <rect x="44" y="18" width="10" height="6" rx="3"/>
+    <rect x="44" y="29" width="14" height="6" rx="3" opacity="0.65"/>
+    <rect x="44" y="40" width="7" height="6" rx="3" opacity="0.4"/>
+  </g>
+</svg>

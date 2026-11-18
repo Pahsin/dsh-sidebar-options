@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "title": "Option brief",
+    "description": "When the agent asks you to choose, the right sidebar opens with each option's description and sample files."
+  },
+  "tab": {
+    "title": "Option brief"
+  },
+  "empty": {
+    "title": "Nothing to choose right now",
+    "body": "Next time I ask you with options, or request an approval, this panel lists every option's description and samples."
+  },
+  "question": {
+    "files": "Sample files",
+    "noFile": "No sample files for this option",
+    "option": "Option",
+    "detail": "Details",
+    "planReview": "Plan review"
+  },
+  "file": {
+    "open": "Open in sidebar",
+    "loading": "Reading…",
+    "failed": "Preview failed",
+    "missing": "File not found or not readable",
+    "unsupported": "No inline preview for this format; click the name to open it",
+    "lines": "First {n} lines only"
+  },
+  "approval": {
+    "title": "Pending approval",
+    "tool": "Tool",
+    "reason": "Reason"
+  }
+}
