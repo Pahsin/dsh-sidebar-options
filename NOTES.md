@@ -60,3 +60,10 @@
 - 症状：HTML 样例直接塞进 ~500px 的 iframe，桌面版式被响应式挤成一列，看不出设计。
 - 解法：iframe 固定 960×620 渲染，外面套一层测量宽度的容器，`transform: scale(宽/960)` + `transform-origin: top left`，容器高度 = 620×scale；`ResizeObserver` 重算。
 - 代价：缩放后正文偏小（0.52 倍），要读字还是点开官方预览。
+
+## 10. 发布身份：署名 Pashin，GitHub 账号 Pahsin
+
+- `package.json` 的 `author` 写 **Pashin**（本人指定）；GitHub 账号拼写是 **Pahsin**（少一个 s），所以 `repository` / `homepage` / `bugs` 和 README 里的安装地址都必须用 `Pahsin`，别"顺手改统一"，改了链接就断。
+- 仓库：<https://github.com/Pahsin/dsh-sidebar-options>（public）。朋友装法：`plugin_manager install_bundle target: github:Pahsin/dsh-sidebar-options`，他机器上要有 git（安装前会 `git ls-remote`）。
+- 本机 profile 故意保持 `link:E:/DSHworkspace/plugins/sidebar-options`：改文件即时生效；切到 github 安装后改代码就不自动生效了。
+- 发版节奏：改完代码 → `git add -A && git commit` → `git push`；tgz 用 `pnpm pack` 重打（输出在 `E:\DSHworkspace\plugins\_dist`）。
