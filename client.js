@@ -579,12 +579,12 @@ window.__ModuleLoader__.load({
     async function loadPresentedFiles(ctx, sessionId, signal) {
       const files = [];
       const seen = new Set();
-      const take = (raw) => {
+      const take = (raw, seq) => {
         const path = tidyPath(raw);
         const key = path.toLowerCase();
         if (path === '' || seen.has(key)) return;
         seen.add(key);
-        files.push({ path, ext: extensionOf(path), kind: kindOf(path) });
+        files.push({ path, ext: extensionOf(path), kind: kindOf(path), seq: typeof seq === 'number' ? seq : 0 });
       };
       let remote;
       try {
@@ -606,7 +606,9 @@ window.__ModuleLoader__.load({
       for (let guard = 0; guard < 4 && page.records.length > 0; guard += 1) {
         for (let index = page.records.length - 1; index >= 0; index -= 1) {
           const record = page.records[index];
-          for (const path of presentPaths(record && record.event)) take(path);
+          const event = record && record.event;
+          const seq = event && typeof event.seq === 'number' ? event.seq : 0;
+          for (const path of presentPaths(event)) take(path, seq);
           if (files.length >= MAX_PRESENTED_FILES) break;
         }
         if (files.length > 0 || !page.hasMore || snapshot.cursor === undefined) break;
@@ -640,6 +642,36 @@ window.__ModuleLoader__.load({
         }
       }
       return existing;
+    }
+
+    /**
+     * Put each presented file under the option it illustrates. An agent that
+     * presents one sample per choice does it in option order, so equal counts map
+     * by position; anything that cannot be mapped stays in the panel-level list.
+     */
+    function assignPresented(brief, presented) {
+      if (!brief || !Array.isArray(presented) || presented.length === 0) return brief;
+      const questions = Array.isArray(brief.questions) ? brief.questions : [];
+      const options = [];
+      const referenced = new Set();
+      for (const question of questions) {
+        for (const option of question.options || []) {
+          options.push(option);
+          for (const file of option.files || []) referenced.add(file.path.toLowerCase());
+        }
+        for (const file of question.detailFiles || []) referenced.add(file.path.toLowerCase());
+      }
+      const ordered = presented.slice().sort((left, right) => (left.seq || 0) - (right.seq || 0));
+      const candidates = ordered.filter((file) => !referenced.has(file.path.toLowerCase()));
+      if (candidates.length === 0) return { ...brief, presented: [] };
+      const emptyOptions = options.filter((option) => !option.files || option.files.length === 0);
+      const target = candidates.length === emptyOptions.length && emptyOptions.length > 0 ? emptyOptions : candidates.length === options.length && options.length > 0 ? options : null;
+      if (target === null) return { ...brief, presented };
+      target.forEach((option, index) => {
+        const file = candidates[index];
+        option.files = (option.files || []).concat([{ path: file.path, ext: file.ext, kind: file.kind }]);
+      });
+      return { ...brief, presented: [] };
     }
 
     function safeTabs(ctx, sessionId) {
@@ -765,7 +797,7 @@ window.__ModuleLoader__.load({
               if (controller.signal.aborted || files.length === 0) return;
               const live = snapshot.brief;
               if (!live || live.key !== key) return;
-              publish({ status: 'ready', brief: { ...live, presented: files } });
+              publish({ status: 'ready', brief: assignPresented(live, files) });
             })
             .catch((error) => {
               if (!controller.signal.aborted) console.error('[option-brief] could not read the presented files', error);
@@ -801,7 +833,7 @@ window.__ModuleLoader__.load({
         'empty.title': '现在没有待选的问题',
         'empty.body': '下次我用 Q&A 问你、或者请求你批准时，这里会自动列出每个选项的说明和样例。',
         'question.files': '样例文件',
-        'panel.presented': '正文里的产物',
+        'panel.presented': '其他正文产物',
         'question.detail': '详细说明',
         'question.planReview': '计划审阅',
         'file.open': '在侧栏打开',
@@ -820,7 +852,7 @@ window.__ModuleLoader__.load({
         'empty.title': 'Nothing to choose right now',
         'empty.body': "Next time I ask you with options, or request an approval, this panel lists every option's description and samples.",
         'question.files': 'Sample files',
-        'panel.presented': 'Files from the message',
+        'panel.presented': 'Other body files',
         'question.detail': 'Details',
         'question.planReview': 'Plan review',
         'file.open': 'Open in sidebar',
