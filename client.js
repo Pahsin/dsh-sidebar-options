@@ -554,7 +554,7 @@ window.__ModuleLoader__.load({
       return value !== null && typeof value === 'object' ? value : undefined;
     }
 
-    /** File paths one `present` call carried, in the order the card listed them. */
+    /** What one `present` call carried, in the order the card listed it. */
     function presentPaths(event) {
       if (!event || typeof event !== 'object') return [];
       if (event.type !== 'tool/call' && event.type !== 'tool/ptc-dispatch') return [];
@@ -562,12 +562,14 @@ window.__ModuleLoader__.load({
       if (!data || typeof data !== 'object' || data.name !== 'present') return [];
       const args = toolArguments(data.arguments);
       if (!args || !Array.isArray(args.files)) return [];
-      const paths = [];
+      const listed = [];
       for (const file of args.files) {
         const path = file && typeof file === 'string' ? file : file && typeof file.path === 'string' ? file.path : '';
-        if (path !== '') paths.push(path);
+        if (path === '') continue;
+        const note = file && typeof file === 'object' && typeof file.description === 'string' ? file.description : '';
+        listed.push({ path, note });
       }
-      return paths;
+      return listed;
     }
 
     /**
@@ -579,45 +581,48 @@ window.__ModuleLoader__.load({
     async function loadPresentedFiles(ctx, sessionId, signal) {
       const files = [];
       const seen = new Set();
-      const take = (raw, seq) => {
+      const take = (raw, seq, note) => {
         const path = tidyPath(raw);
         const key = path.toLowerCase();
         if (path === '' || seen.has(key)) return;
         seen.add(key);
-        files.push({ path, ext: extensionOf(path), kind: kindOf(path), seq: typeof seq === 'number' ? seq : 0 });
+        files.push({
+          path,
+          ext: extensionOf(path),
+          kind: kindOf(path),
+          seq: typeof seq === 'number' ? seq : 0,
+          note: typeof note === 'string' ? note : '',
+        });
       };
-      let remote;
-      try {
-        remote = ctx.get('remote.session');
-      } catch (_error) {
-        remote = undefined;
-      }
-      if (!remote || typeof remote.follow !== 'function') return files;
-      const address = { kind: 'session', sessionId };
-      let snapshot;
-      for await (const frame of remote.follow({ address }, signal)) {
-        if (frame && frame.type === 'snapshot') {
-          snapshot = frame;
-          break;
+      // The Client already holds the contiguous event window the Conversation is
+      // assembled from, so no session-history remote call is needed here.
+      const entries = (() => {
+        try {
+          const binding = ctx.sessions.binding(sessionId);
+          const source = binding && binding.eventSource;
+          const window = source && typeof source.getSnapshot === 'function' ? source.getSnapshot() : undefined;
+          return window && Array.isArray(window.entries) ? window.entries : [];
+        } catch (_error) {
+          return [];
+        }
+      })();
+      // Only this turn's presents count: a file presented in an older turn belongs
+      // to that answer, not to the question standing now.
+      let boundary = 0;
+      for (const entry of entries) {
+        if (!entry || entry.type !== 'event' || !entry.event) continue;
+        if (entry.event.type === 'user/message' && typeof entry.event.seq === 'number' && entry.event.seq > boundary) {
+          boundary = entry.event.seq;
         }
       }
-      if (!snapshot) return files;
-      let page = { records: Array.isArray(snapshot.records) ? snapshot.records : [], hasMore: snapshot.hasMore === true };
-      for (let guard = 0; guard < 4 && page.records.length > 0; guard += 1) {
-        for (let index = page.records.length - 1; index >= 0; index -= 1) {
-          const record = page.records[index];
-          const event = record && record.event;
-          const seq = event && typeof event.seq === 'number' ? event.seq : 0;
-          for (const path of presentPaths(event)) take(path, seq);
-          if (files.length >= MAX_PRESENTED_FILES) break;
-        }
-        if (files.length > 0 || !page.hasMore || snapshot.cursor === undefined) break;
-        const first = page.records[0];
-        const beforeSeq = first && first.event ? first.event.seq : undefined;
-        if (beforeSeq === undefined) break;
-        const next = await remote.page({ address, throughSeq: snapshot.cursor, beforeSeq }, signal);
-        if (!next || !next.ok) break;
-        page = next.value || { records: [], hasMore: false };
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (!entry || entry.type !== 'event' || !entry.event) continue;
+        const event = entry.event;
+        const seq = typeof event.seq === 'number' ? event.seq : 0;
+        if (boundary > 0 && seq < boundary) break;
+        for (const item of presentPaths(event)) take(item.path, seq, item.note);
+        if (files.length >= MAX_PRESENTED_FILES) break;
       }
       // A presented path can be stale (the file moved or was deleted since the
       // message); keep only the ones the Host can still stat.
@@ -664,14 +669,41 @@ window.__ModuleLoader__.load({
       const ordered = presented.slice().sort((left, right) => (left.seq || 0) - (right.seq || 0));
       const candidates = ordered.filter((file) => !referenced.has(file.path.toLowerCase()));
       if (candidates.length === 0) return { ...brief, presented: [] };
-      const emptyOptions = options.filter((option) => !option.files || option.files.length === 0);
-      const target = candidates.length === emptyOptions.length && emptyOptions.length > 0 ? emptyOptions : candidates.length === options.length && options.length > 0 ? options : null;
-      if (target === null) return { ...brief, presented };
-      target.forEach((option, index) => {
-        const file = candidates[index];
+
+      const attach = (option, file) => {
+        if ((option.files || []).some((existing) => existing.path.toLowerCase() === file.path.toLowerCase())) return true;
         option.files = (option.files || []).concat([{ path: file.path, ext: file.ext, kind: file.kind }]);
-      });
-      return { ...brief, presented: [] };
+        return true;
+      };
+
+      // A present card describes its file ("B · 鸡冠报刊（米白纸…）"), so the option
+      // whose own label appears in that description wins before any positional guess.
+      const leftover = [];
+      for (const file of candidates) {
+        const haystack = (String(file.note || '') + ' ' + file.path).toLowerCase();
+        let match;
+        let score = 0;
+        for (const option of options) {
+          const label = String(option.label || '').trim().toLowerCase();
+          if (label.length < 2 || !haystack.includes(label)) continue;
+          if (label.length > score) {
+            match = option;
+            score = label.length;
+          }
+        }
+        if (match !== undefined) attach(match, file);
+        else leftover.push(file);
+      }
+
+      // Whatever is left maps by position, but only when the counts line up.
+      if (leftover.length > 0) {
+        const empty = options.filter((option) => !option.files || option.files.length === 0);
+        if (leftover.length === empty.length && empty.length > 0) {
+          leftover.forEach((file, index) => attach(empty[index], file));
+          leftover.length = 0;
+        }
+      }
+      return { ...brief, presented: leftover };
     }
 
     function safeTabs(ctx, sessionId) {
@@ -871,7 +903,7 @@ window.__ModuleLoader__.load({
     // Plugin
     // ---------------------------------------------------------------------
 
-    const inject = ['slots', 'locale', 'remote', 'remote.session', 'uiSession', 'sidebarRight', 'sidebarRightTabs'];
+    const inject = ['slots', 'locale', 'sessions', 'uiSession', 'sidebarRight', 'sidebarRightTabs'];
 
     function apply(ctx) {
       ctxRef = ctx;

@@ -68,14 +68,18 @@
 - 本机 profile 故意保持 `link:E:/DSHworkspace/plugins/sidebar-options`：改文件即时生效；切到 github 安装后改代码就不自动生效了。
 - 发版节奏：改完代码 → `git add -A && git commit` → `git push`；tgz 用 `pnpm pack` 重打（输出在 `E:\DSHworkspace\plugins\_dist`）。
 
-## 11. 正文里的样例（`present` 产物）要从会话日志捞
+## 11. 正文里的样例（`present` 产物）要从会话事件窗口捞
 
 - 症状：另一轮对话里，助手把海报贴进了**正文**（`present` 卡），提问的选项描述只写了纯文字。面板于是只有文字，样例全看不到。
 - 根因：`pendingInteraction` 只带 `questions/options/description`，不带"这一轮正文里有什么文件"。选项描述里没路径 = 面板不知道有文件。
-- 解法：提问出现时读会话日志，把最近 `present` 调用的文件捞出来当「正文里的产物」：
-  1. `ctx.get('remote.session').follow({ address: { kind: 'session', sessionId } }, signal)` → 首帧 `type:'snapshot'`，带 `records`（每项 `{event}`）、`hasMore`、`cursor`；
-  2. 从 `records` 尾部往前找 `event.type === 'tool/call'`（PTC 是 `tool/ptc-dispatch`）且 `event.data.name === 'present'`，`JSON.parse(event.data.arguments).files[].path`；
-  3. 不够就往前翻页：`remote.page({ address, throughSeq: snapshot.cursor, beforeSeq: records[0].event.seq }, signal)`；
-  4. **必须 `stat` 过滤**：`ctx.get('remote.workspaceFiles').stat(sessionId, path, signal)`，拿不到或抛错的丢弃（presented 路径会过期，比如文件改名后）。
-- 限制：只覆盖 `present` 的文件；如果图片是**消息附件**（不是 present），拿不到 —— 那要走附件 loader，没做。
-- 再犯条件：任何"面板要反映正文内容"的需求。
+- 走错的第一步：用 `ctx.remote.session.follow({address}, signal)` 读会话日志 —— **在自己的会话能通，在另一个会话（687 事件、有子智能体）里静默返回 0 条**。别在 UI 里依赖它。
+- 正确解法：读**客户端已经持有的会话事件窗口**，同步、不依赖远端 RPC：
+  ```js
+  const binding = ctx.sessions.binding(sessionId);
+  const window = binding.eventSource.getSnapshot();   // { entries: [{type:'event', event}], hasMore, revision }
+  ```
+  倒序扫 `entries`，找 `event.type === 'tool/call'`（PTC 是 `tool/ptc-dispatch`）且 `event.data.name === 'present'`，`JSON.parse(event.data.arguments).files[]` 里同时有 `path` 和 `description`。
+- **按卡片描述匹配选项**：`present` 的 `files[].description` 会写「B · 鸡冠报刊（米白纸＋鸡冠红）」，拿它 + 路径去 include 选项 `label`，取最长匹配；剩下的才按位置 1:1 兜底。实测那 3 张海报/3 个选项、4 个选项含"都不对"都能正确落位。
+- **只取本轮**：以最后一条 `user/message` 的 seq 为界，更早的 `present` 属于上一问，别混进来（实测会混进上一轮的 `_ext/*.md`）。
+- **必须 `stat` 过滤**：`ctx.get('remote.workspaceFiles').stat(sessionId, path, signal)` 拿不到就丢弃 —— presented 路径会过期（文件改名/挪走）。
+- 限制：只覆盖 `present` 的文件；如果图片是**消息附件**（不是 present），拿不到。
