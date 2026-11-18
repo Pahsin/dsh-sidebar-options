@@ -82,4 +82,5 @@
 - **按卡片描述匹配选项**：`present` 的 `files[].description` 会写「B · 鸡冠报刊（米白纸＋鸡冠红）」，拿它 + 路径去 include 选项 `label`，取最长匹配；剩下的才按位置 1:1 兜底。实测那 3 张海报/3 个选项、4 个选项含"都不对"都能正确落位。
 - **只取本轮**：以最后一条 `user/message` 的 seq 为界，更早的 `present` 属于上一问，别混进来（实测会混进上一轮的 `_ext/*.md`）。
 - **必须 `stat` 过滤**：`ctx.get('remote.workspaceFiles').stat(sessionId, path, signal)` 拿不到就丢弃 —— presented 路径会过期（文件改名/挪走）。
+- **切会话时有竞态**：`pendingInteraction` 一变就同步开面板，此刻 `binding.eventSource` 的窗口可能还是空的 → 扫一次空就再也不回来。必须轮询等窗口（实测 300ms × 最多 10 次足够，那个会话 1105 条事件）。这坑让我两次看到"又没了"。
 - 限制：只覆盖 `present` 的文件；如果图片是**消息附件**（不是 present），拿不到。
