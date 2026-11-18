@@ -595,8 +595,10 @@ window.__ModuleLoader__.load({
         });
       };
       // The Client already holds the contiguous event window the Conversation is
-      // assembled from, so no session-history remote call is needed here.
-      const entries = (() => {
+      // assembled from, so no session-history remote call is needed here. The window
+      // can still be empty right after a Session switch while its first page loads,
+      // so wait for it rather than scanning an empty list once.
+      const readEntries = () => {
         try {
           const binding = ctx.sessions.binding(sessionId);
           const source = binding && binding.eventSource;
@@ -605,7 +607,15 @@ window.__ModuleLoader__.load({
         } catch (_error) {
           return [];
         }
-      })();
+      };
+      let entries = readEntries();
+      for (let attempt = 0; attempt < 10 && entries.length === 0; attempt += 1) {
+        if (signal.aborted) return [];
+        await new Promise((resolve) => {
+          setTimeout(resolve, 300);
+        });
+        entries = readEntries();
+      }
       // Only this turn's presents count: a file presented in an older turn belongs
       // to that answer, not to the question standing now.
       let boundary = 0;
@@ -636,14 +646,13 @@ window.__ModuleLoader__.load({
       })();
       for (const file of files.slice(0, MAX_PRESENTED_FILES)) {
         if (!filesRemote || typeof filesRemote.stat !== 'function') {
-          existing.push(file);
-          continue;
+          existing.push(...files.slice(0, MAX_PRESENTED_FILES));
+          return existing;
         }
         try {
           const stat = unwrap(await filesRemote.stat(sessionId, file.path, signal));
           if (stat && typeof stat.absolutePath === 'string') existing.push({ ...file, path: stat.absolutePath.replace(/\\/g, '/') });
-        } catch (_error) {
-          // missing or unreadable — leave it out rather than showing a broken card
+        } catch (error) {
         }
       }
       return existing;
