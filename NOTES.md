@@ -67,3 +67,15 @@
 - 仓库：<https://github.com/Pahsin/dsh-sidebar-options>（public）。朋友装法：`plugin_manager install_bundle target: github:Pahsin/dsh-sidebar-options`，他机器上要有 git（安装前会 `git ls-remote`）。
 - 本机 profile 故意保持 `link:E:/DSHworkspace/plugins/sidebar-options`：改文件即时生效；切到 github 安装后改代码就不自动生效了。
 - 发版节奏：改完代码 → `git add -A && git commit` → `git push`；tgz 用 `pnpm pack` 重打（输出在 `E:\DSHworkspace\plugins\_dist`）。
+
+## 11. 正文里的样例（`present` 产物）要从会话日志捞
+
+- 症状：另一轮对话里，助手把海报贴进了**正文**（`present` 卡），提问的选项描述只写了纯文字。面板于是只有文字，样例全看不到。
+- 根因：`pendingInteraction` 只带 `questions/options/description`，不带"这一轮正文里有什么文件"。选项描述里没路径 = 面板不知道有文件。
+- 解法：提问出现时读会话日志，把最近 `present` 调用的文件捞出来当「正文里的产物」：
+  1. `ctx.get('remote.session').follow({ address: { kind: 'session', sessionId } }, signal)` → 首帧 `type:'snapshot'`，带 `records`（每项 `{event}`）、`hasMore`、`cursor`；
+  2. 从 `records` 尾部往前找 `event.type === 'tool/call'`（PTC 是 `tool/ptc-dispatch`）且 `event.data.name === 'present'`，`JSON.parse(event.data.arguments).files[].path`；
+  3. 不够就往前翻页：`remote.page({ address, throughSeq: snapshot.cursor, beforeSeq: records[0].event.seq }, signal)`；
+  4. **必须 `stat` 过滤**：`ctx.get('remote.workspaceFiles').stat(sessionId, path, signal)`，拿不到或抛错的丢弃（presented 路径会过期，比如文件改名后）。
+- 限制：只覆盖 `present` 的文件；如果图片是**消息附件**（不是 present），拿不到 —— 那要走附件 loader，没做。
+- 再犯条件：任何"面板要反映正文内容"的需求。

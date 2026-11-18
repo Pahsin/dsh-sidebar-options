@@ -24,6 +24,8 @@ window.__ModuleLoader__.load({
     const KIND = 'option-brief';
     const TYPE_ID = 'dsh-sidebar-options';
     const MAX_FILES_PER_OPTION = 8;
+    /** How many files the panel lifts out of the message body's `present` cards. */
+    const MAX_PRESENTED_FILES = 6;
     const MAX_TEXT_PREVIEW_LINES = 32;
     const TEXT_READ_LIMIT = 4000;
     const HTML_READ_LIMIT = 4000;
@@ -444,6 +446,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ob-kicker' }, kicker),
           brief.title !== '' ? h('div', { className: 'ob-title' }, brief.title) : null,
         ),
+        h(FileList, { files: brief.presented, sessionId, t, label: t('panel.presented') }),
         brief.kind === 'approval'
           ? h(
               React.Fragment,
@@ -539,6 +542,106 @@ window.__ModuleLoader__.load({
       };
     }
 
+    /** Parse one tool call's arguments: native calls carry JSON text, PTC dispatches carry an object. */
+    function toolArguments(value) {
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch (_error) {
+          return undefined;
+        }
+      }
+      return value !== null && typeof value === 'object' ? value : undefined;
+    }
+
+    /** File paths one `present` call carried, in the order the card listed them. */
+    function presentPaths(event) {
+      if (!event || typeof event !== 'object') return [];
+      if (event.type !== 'tool/call' && event.type !== 'tool/ptc-dispatch') return [];
+      const data = event.data;
+      if (!data || typeof data !== 'object' || data.name !== 'present') return [];
+      const args = toolArguments(data.arguments);
+      if (!args || !Array.isArray(args.files)) return [];
+      const paths = [];
+      for (const file of args.files) {
+        const path = file && typeof file === 'string' ? file : file && typeof file.path === 'string' ? file.path : '';
+        if (path !== '') paths.push(path);
+      }
+      return paths;
+    }
+
+    /**
+     * Files the assistant presented in the message body right before this question.
+     * The question payload only carries option descriptions, and a `present` card
+     * never names its file there — so the panel reads the Session log instead and
+     * lifts the latest presented files in, newest first.
+     */
+    async function loadPresentedFiles(ctx, sessionId, signal) {
+      const files = [];
+      const seen = new Set();
+      const take = (raw) => {
+        const path = tidyPath(raw);
+        const key = path.toLowerCase();
+        if (path === '' || seen.has(key)) return;
+        seen.add(key);
+        files.push({ path, ext: extensionOf(path), kind: kindOf(path) });
+      };
+      let remote;
+      try {
+        remote = ctx.get('remote.session');
+      } catch (_error) {
+        remote = undefined;
+      }
+      if (!remote || typeof remote.follow !== 'function') return files;
+      const address = { kind: 'session', sessionId };
+      let snapshot;
+      for await (const frame of remote.follow({ address }, signal)) {
+        if (frame && frame.type === 'snapshot') {
+          snapshot = frame;
+          break;
+        }
+      }
+      if (!snapshot) return files;
+      let page = { records: Array.isArray(snapshot.records) ? snapshot.records : [], hasMore: snapshot.hasMore === true };
+      for (let guard = 0; guard < 4 && page.records.length > 0; guard += 1) {
+        for (let index = page.records.length - 1; index >= 0; index -= 1) {
+          const record = page.records[index];
+          for (const path of presentPaths(record && record.event)) take(path);
+          if (files.length >= MAX_PRESENTED_FILES) break;
+        }
+        if (files.length > 0 || !page.hasMore || snapshot.cursor === undefined) break;
+        const first = page.records[0];
+        const beforeSeq = first && first.event ? first.event.seq : undefined;
+        if (beforeSeq === undefined) break;
+        const next = await remote.page({ address, throughSeq: snapshot.cursor, beforeSeq }, signal);
+        if (!next || !next.ok) break;
+        page = next.value || { records: [], hasMore: false };
+      }
+      // A presented path can be stale (the file moved or was deleted since the
+      // message); keep only the ones the Host can still stat.
+      const existing = [];
+      const filesRemote = (() => {
+        try {
+          return ctx.get('remote.workspaceFiles');
+        } catch (_error) {
+          return undefined;
+        }
+      })();
+      for (const file of files.slice(0, MAX_PRESENTED_FILES)) {
+        if (!filesRemote || typeof filesRemote.stat !== 'function') {
+          existing.push(file);
+          continue;
+        }
+        try {
+          const stat = unwrap(await filesRemote.stat(sessionId, file.path, signal));
+          if (stat && typeof stat.absolutePath === 'string') existing.push({ ...file, path: stat.absolutePath.replace(/\\/g, '/') });
+        } catch (_error) {
+          // missing or unreadable — leave it out rather than showing a broken card
+        }
+      }
+      return existing;
+    }
+
     function safeTabs(ctx, sessionId) {
       try {
         const tabs = ctx.sidebarRight.tabsIn(sessionId);
@@ -552,6 +655,8 @@ window.__ModuleLoader__.load({
       let current = null;
       let closingSelf = false;
       const dismissed = new Set();
+      let presentedAbort = null;
+      let presentedKey = null;
 
       const onScreen = () => {
         try {
@@ -646,8 +751,26 @@ window.__ModuleLoader__.load({
           }
           brief = questionsBrief(sessionId, questions);
         }
-        publish({ status: 'ready', brief });
+        brief.presented = [];
         const key = String(interaction.key || interaction.callId || interaction.kind);
+        brief.key = key;
+        publish({ status: 'ready', brief });
+        if (presentedKey !== key) {
+          presentedKey = key;
+          if (presentedAbort) presentedAbort.abort();
+          presentedAbort = new AbortController();
+          const controller = presentedAbort;
+          loadPresentedFiles(ctx, sessionId, controller.signal)
+            .then((files) => {
+              if (controller.signal.aborted || files.length === 0) return;
+              const live = snapshot.brief;
+              if (!live || live.key !== key) return;
+              publish({ status: 'ready', brief: { ...live, presented: files } });
+            })
+            .catch((error) => {
+              if (!controller.signal.aborted) console.error('[option-brief] could not read the presented files', error);
+            });
+        }
         if (dismissed.has(key)) return;
         if (current && current.key === key) return;
         current = { sessionId, key };
@@ -666,6 +789,7 @@ window.__ModuleLoader__.load({
         stopStatus();
         stopMounted();
         stopClose();
+        if (presentedAbort) presentedAbort.abort();
       };
     }
 
@@ -677,6 +801,7 @@ window.__ModuleLoader__.load({
         'empty.title': '现在没有待选的问题',
         'empty.body': '下次我用 Q&A 问你、或者请求你批准时，这里会自动列出每个选项的说明和样例。',
         'question.files': '样例文件',
+        'panel.presented': '正文里的产物',
         'question.detail': '详细说明',
         'question.planReview': '计划审阅',
         'file.open': '在侧栏打开',
@@ -695,6 +820,7 @@ window.__ModuleLoader__.load({
         'empty.title': 'Nothing to choose right now',
         'empty.body': "Next time I ask you with options, or request an approval, this panel lists every option's description and samples.",
         'question.files': 'Sample files',
+        'panel.presented': 'Files from the message',
         'question.detail': 'Details',
         'question.planReview': 'Plan review',
         'file.open': 'Open in sidebar',
@@ -713,7 +839,7 @@ window.__ModuleLoader__.load({
     // Plugin
     // ---------------------------------------------------------------------
 
-    const inject = ['slots', 'locale', 'uiSession', 'sidebarRight', 'sidebarRightTabs'];
+    const inject = ['slots', 'locale', 'remote', 'remote.session', 'uiSession', 'sidebarRight', 'sidebarRightTabs'];
 
     function apply(ctx) {
       ctxRef = ctx;

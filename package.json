@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-options",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Right-sidebar option brief for DeepSeek Harness: when the agent asks with options, the panel shows each option's description and sample files.",
   "license": "MIT",
   "author": "Pashin",
